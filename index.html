@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Text Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        .page {
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            position: relative;
+            margin: 20px auto;
+            overflow: visible !important;
+            min-height: 100%;
+            width: 210mm;
+            height: 297mm;
+            min-height: 297mm;
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+            image-rendering: crisp-edges;
+            transform: translateZ(0);
+        }
+        .text-element {
+            position: absolute;
+            cursor: grab;
+            user-select: none;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            transform-origin: center center;
+            max-width: none !important;
+            transform-style: preserve-3d;
+            will-change: transform;
+            -webkit-font-smoothing: subpixel-antialiased;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            perspective: 1000px;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+            touch-action: none;
+            transition: transform 0.1s;
+        }
+        .text-element:active {
+            cursor: grabbing;
+        }
+        .text-element.selected {
+            outline: 2px dashed #3b82f6;
+        }
+        .rotate-handle {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            background-color: #3b82f6;
+            border-radius: 50%;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            pointer-events: none;
+        }
+        .resize-handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #3b82f6;
+            right: -5px;
+            bottom: -5px;
+            cursor: nwse-resize;
+            pointer-events: none;
+        }
+        .page-container {
+            margin-bottom: 20px;
+        }
+        .texture-preview {
+            width: 50px;
+            height: 50px;
+            background-size: cover;
+            margin-top: 5px;
+            border: 1px solid #ddd;
+        }
+        .download-preview {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+        .preview-image {
+            max-width: 80%;
+            max-height: 80%;
+            border: 2px solid white;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        .preview-controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        .preview-page {
+            background-color: white;
+            margin: 10px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+            max-width: 90%;
+            max-height: 80vh;
+            overflow: auto;
+        }
+        .preview-navigation {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+            align-items: center;
+        }
+        body {
+            background: white;
+        }
+        #preview-pages {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .font-tag {
+            display: flex;
+            align-items: center;
+            background-color: #f3f4f6;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            margin-right: 4px;
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+        .font-tag button {
+            margin-left: 4px;
+            color: #ef4444;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        .font-thickness-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .font-thickness-preview {
+            width: 100%;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8fafc;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+        .font-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .font-checkbox input {
+            margin: 0;
+        }
+        .font-checkbox label {
+            font-size: 14px;
+        }
+        .font-selector {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        /* New styles for preview fixes */
+        .page {
+            background: white !important;
+            overflow: visible !important;
+        }
+        .clone-page .rotate-handle,
+        .clone-page .resize-handle {
+            display: none !important;
+        }
+        .text-element {
+            transform: translateZ(0);
+            will-change: transform;
+        }
+        .preview-page img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            background: white;
+        }
+
+        @media print {
+            .rotate-handle,
+            .resize-handle {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-white min-h-screen">
+    <div class="container mx-auto py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">Advanced Text Editor</h1>
+
+        <div class="flex flex-wrap gap-6">
+            <!-- Control Panel -->
+            <div class="w-full md:w-1/4 bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-4">Controls</h2>
+
+                <!-- Font Selection -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Font Family</label>
+                    <select id="font-family" class="w-full p-2 border rounded">
+                        <option value="Arial">Arial</option>
+                        <option value="Times New Roman">Times New Roman</option>
+                        <option value="Courier New">Courier New</option>
+                        <option value="Georgia">Georgia</option>
+                        <option value="Verdana">Verdana</option>
+                        <option value="Impact">Impact</option>
+                        <option value="Comic Sans MS">Comic Sans MS</option>
+                    </select>
+                </div>
+
+                <!-- Font Thickness Control -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Font Thickness</label>
+                    <div class="font-thickness-control">
+                        <input type="range" id="font-thickness" min="1" max="10" value="5" class="flex-1">
+                        <span id="font-thickness-value">5</span>
+                    </div>
+                    <div class="font-thickness-preview" id="font-thickness-preview">
+                        <span style="font-size: 16px;">Preview Text</span>
+                    </div>
+                    <button id="apply-thickness" class="mt-2 bg-blue-500 text-white px-3 py-1 rounded text-sm w-full">Apply Thickness</button>
+                </div>
+
+                <!-- Additional Fonts -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Additional Fonts</label>
+                    <div id="additional-fonts" class="flex flex-wrap gap-2 mb-2">
+                        <!-- Additional fonts will be added here -->
+                    </div>
+                    <button id="add-font" class="bg-blue-500 text-white px-3 py-1 rounded text-sm">Add Font</button>
+                    <button id="randomize-fonts" class="mt-2 bg-purple-500 text-white px-3 py-1 rounded text-sm w-full">Randomize Fonts in Text</button>
+                    <div class="mt-2">
+                        <label class="block text-sm font-medium mb-1">Randomization Intensity</label>
+                        <input type="range" id="random-font-intensity" min="1" max="10" value="5" class="w-full">
+                        <span id="random-font-intensity-value">5</span>
+                    </div>
+                </div>
+
+                <!-- Font Weight Control -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Font Weight (for all text)</label>
+                    <input type="range" id="font-weight-slider" min="100" max="900" step="100" value="400" class="w-full">
+                    <span id="font-weight-value">400 (Normal)</span>
+                </div>
+
+                <!-- Custom Font Upload -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Upload Custom Fonts (Multiple)</label>
+                    <input type="file" id="font-upload" accept=".ttf,.otf,.woff" multiple class="w-full">
+                    <button id="load-font" class="mt-2 bg-blue-500 text-white px-3 py-1 rounded text-sm">Load Fonts</button>
+                </div>
+
+                <!-- Text Input -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Text Content</label>
+                    <textarea id="text-content" class="w-full p-2 border rounded" rows="3"></textarea>
+                    <button id="add-text" class="mt-2 bg-blue-500 text-white px-3 py-1 rounded text-sm">Add Text</button>
+                </div>
+
+                <!-- Heading Level -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Heading Level</label>
+                    <select id="heading-level" class="w-full p-2 border rounded">
+                        <option value="p">Paragraph</option>
+                        <option value="h1">Heading 1</option>
+                        <option value="h2">Heading 2</option>
+                        <option value="h3">Heading 3</option>
+                        <option value="h4">Heading 4</option>
+                    </select>
+                </div>
+
+                <!-- Font Size -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Font Size (px)</label>
+                    <input type="range" id="font-size", min="8", max="72", value="16", class="w-full">
+                    <span id="font-size-value">16px</span>
+                </div>
+
+                <!-- Line Height -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Line Height</label>
+                    <input type="range" id="line-height", min="0.8", max="3", step="0.1", value="1.2", class="w-full">
+                    <span id="line-height-value">1.2</span>
+                </div>
+
+                <!-- Text Color -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Text Color</label>
+                    <input type="color" id="text-color", value="#000000", class="w-full h-10">
+                </div>
+
+                <!-- Texture for Text -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Texture for Text</label>
+                    <input type="file" id="texture-upload", accept="image/*", class="w-full">
+                    <div id="texture-preview" class="texture-preview"></div>
+                    <button id="apply-texture" class="mt-2 bg-blue-500 text-white px-3 py-1 rounded text-sm">Apply Texture</button>
+                    <button id="remove-texture" class="mt-2 bg-gray-500 text-white px-3 py-1 rounded text-sm">Remove Texture</button>
+                </div>
+
+                <!-- Page Format -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Page Format</label>
+                    <select id="page-format", class="w-full p-2 border rounded">
+                        <option value="a4">A4 (210×297 mm)</option>
+                        <option value="a5">A5 (148×210 mm)</option>
+                        <option value="17x20.5">17×20.5 cm</option>
+                        <option value="14.8x20.5">14.8×20.5 cm</option>
+                    </select>
+                </div>
+
+                <!-- Randomize Angles -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Randomize Letter Angles</label>
+                    <input type="range" id="random-angle", min="0", max="20", value="0", class="w-full">
+                    <span id="random-angle-value">0°</span>
+                    <button id="apply-random" class="mt-2 bg-purple-500 text-white px-3 py-1 rounded text-sm">Randomize Angles</button>
+                </div>
+
+                <!-- Filename Input -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Filename (without extension)</label>
+                    <input type="text" id="filename-input", class="w-full p-2 border rounded", value="text-editor">
+                </div>
+
+                <!-- Download Options -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Download As</label>
+                    <div class="flex gap-2">
+                        <button id="prepare-download" class="bg-blue-600 text-white px-3 py-1 rounded text-sm flex-1">Prepare for Download</button>
+                    </div>
+                </div>
+
+                <!-- Delete Button -->
+                <button id="delete-selected" class="w-full bg-red-500 text-white px-3 py-2 rounded mt-4">Delete Selected</button>
+            </div>
+
+            <!-- Editor Area -->
+            <div class="w-full md:w-2/4">
+                <div id="editor-container" class="relative">
+                    <div id="pages-container">
+                        <div class="page-container">
+                            <div id="page-1" class="page bg-white mx-auto">
+                                <!-- Text elements will be added here -->
+                            </div>
+                        </div>
+                    </div>
+                    <button id="add-page" class="mt-2 bg-blue-500 text-white px-3 py-1 rounded text-sm">Add Page</button>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="w-full md:w-1/4 bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-4">Instructions</h2>
+                <ul class="text-sm space-y-2">
+                    <li>1. Enter text and click "Add Text"</li>
+                    <li>2. Click on text to select it</li>
+                    <li>3. Drag to move text</li>
+                    <li>4. Use handles to resize/rotate</li>
+                    <li>5. Customize with controls</li>
+                    <li>6. Prepare and download your creation</li>
+                </ul>
+
+                <div class="mt-6 p-4 bg-blue-50 rounded">
+                    <h3 class="font-medium mb-2">Current Selection:</h3>
+                    <div id="selection-info" class="text-sm text-gray-600">No selection</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Font Selector Modal -->
+    <div id="font-selector-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
+            <h3 class="text-lg font-semibold mb-4">Select Fonts for Randomization</h3>
+            <div class="font-selector" id="font-selector-list">
+                <!-- Font checkboxes will be added here -->
+            </div>
+            <div class="flex justify-end mt-4 gap-2">
+                <button id="cancel-font-selection" class="bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>
+                <button id="confirm-font-selection" class="bg-blue-500 text-white px-4 py-2 rounded">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Download Preview Modal -->
+    <div id="download-preview" class="download-preview">
+        <div id="preview-container" class="flex flex-col items-center">
+            <div id="preview-pages" class="flex flex-col items-center"></div>
+            <div class="preview-navigation">
+                <button id="prev-page" class="bg-gray-500 text-white px-4 py-2 rounded">Previous</button>
+                <span id="page-counter" class="mx-4">Page 1 of 1</span>
+                <button id="next-page" class="bg-gray-500 text-white px-4 py-2 rounded">Next</button>
+            </div>
+        </div>
+        <div class="preview-controls">
+            <button id="download-png" class="bg-green-500 text-white px-4 py-2 rounded">Download as PNG</button>
+            <button id="download-jpg" class="bg-green-600 text-white px-4 py-2 rounded">Download as JPG</button>
+            <button id="download-pdf" class="bg-red-500 text-white px-4 py-2 rounded">Download as PDF</button>
+            <button id="cancel-download" class="bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const editorContainer = document.getElementById('editor-container');
+            const pagesContainer = document.getElementById('pages-container');
+            const addTextBtn = document.getElementById('add-text');
+            const textContent = document.getElementById('text-content');
+            const fontFamily = document.getElementById('font-family');
+            const fontSize = document.getElementById('font-size');
+            const fontSizeValue = document.getElementById('font-size-value');
+            const fontWeightSlider = document.getElementById('font-weight-slider');
+            const fontWeightValue = document.getElementById('font-weight-value');
+            const lineHeight = document.getElementById('line-height');
+            const lineHeightValue = document.getElementById('line-height-value');
+            const textColor = document.getElementById('text-color');
+            const headingLevel = document.getElementById('heading-level');
+            const pageFormat = document.getElementById('page-format');
+            const randomAngle = document.getElementById('random-angle');
+            const randomAngleValue = document.getElementById('random-angle-value');
+            const applyRandomBtn = document.getElementById('apply-random');
+            const prepareDownloadBtn = document.getElementById('prepare-download');
+            const downloadPngBtn = document.getElementById('download-png');
+            const downloadJpgBtn = document.getElementById('download-jpg');
+            const downloadPdfBtn = document.getElementById('download-pdf');
+            const cancelDownloadBtn = document.getElementById('cancel-download');
+            const deleteSelectedBtn = document.getElementById('delete-selected');
+            const fontUpload = document.getElementById('font-upload');
+            const loadFontBtn = document.getElementById('load-font');
+            const selectionInfo = document.getElementById('selection-info');
+            const textureUpload = document.getElementById('texture-upload');
+            const texturePreview = document.getElementById('texture-preview');
+            const applyTextureBtn = document.getElementById('apply-texture');
+            const removeTextureBtn = document.getElementById('remove-texture');
+            const filenameInput = document.getElementById('filename-input');
+            const addPageBtn = document.getElementById('add-page');
+            const downloadPreview = document.getElementById('download-preview');
+            const previewPages = document.getElementById('preview-pages');
+            const prevPageBtn = document.getElementById('prev-page');
+            const nextPageBtn = document.getElementById('next-page');
+            const pageCounter = document.getElementById('page-counter');
+            const addFontBtn = document.getElementById('add-font');
+            const randomizeFontsBtn = document.getElementById('randomize-fonts');
+            const randomFontIntensity = document.getElementById('random-font-intensity');
+            const randomFontIntensityValue = document.getElementById('random-font-intensity-value');
+            const additionalFontsContainer = document.getElementById('additional-fonts');
+            const fontThicknessControl = document.getElementById('font-thickness');
+            const fontThicknessValue = document.getElementById('font-thickness-value');
+            const fontThicknessPreview = document.getElementById('font-thickness-preview');
+            const applyThicknessBtn = document.getElementById('apply-thickness');
+            const fontSelectorModal = document.getElementById('font-selector-modal');
+            const fontSelectorList = document.getElementById('font-selector-list');
+            const confirmFontSelectionBtn = document.getElementById('confirm-font-selection');
+            const cancelFontSelectionBtn = document.getElementById('cancel-font-selection');
+
+            // State
+            let selectedElement = null;
+            let isDragging = false;
+            let isResizing = false;
+            let isRotating = false;
+            let isMoving = false;
+            let currentDraggable = null;
+            let startX, startY, initialX, initialY;
+            let startWidth, startHeight, startAngle;
+            let customFonts = [];
+            let currentTexture = null;
+            let currentPage = 1;
+            let preparedCanvases = [];
+            let currentPreviewPage = 0;
+            let additionalFonts = [];
+            let globalFontWeight = 400;
+            let selectedFontsForRandomization = [];
+            let currentFontThickness = 5;
+            let isRandomized = false; // Track if text has randomized fonts
+
+            // Initialize
+            updatePageSize();
+            updateRandomFontIntensityDisplay();
+            updateFontWeightDisplay();
+            updateFontThicknessDisplay();
+
+            // Event Listeners
+            addTextBtn.addEventListener('click', addTextElement);
+            fontSize.addEventListener('input', updateFontSizeDisplay);
+            lineHeight.addEventListener('input', updateLineHeightDisplay);
+            pageFormat.addEventListener('change', updatePageSize);
+            applyRandomBtn.addEventListener('click', randomizeTextAngles);
+            prepareDownloadBtn.addEventListener('click', prepareForDownload);
+            downloadPngBtn.addEventListener('click', () => downloadPrepared('png'));
+            downloadJpgBtn.addEventListener('click', () => downloadPrepared('jpg'));
+            downloadPdfBtn.addEventListener('click', () => downloadPrepared('pdf'));
+            cancelDownloadBtn.addEventListener('click', cancelDownload);
+            deleteSelectedBtn.addEventListener('click', deleteSelected);
+            loadFontBtn.addEventListener('click', loadCustomFonts);
+            randomAngle.addEventListener('input', updateRandomAngleDisplay);
+            textureUpload.addEventListener('change', previewTexture);
+            applyTextureBtn.addEventListener('click', applyTexture);
+            removeTextureBtn.addEventListener('click', removeTexture);
+            addPageBtn.addEventListener('click', addNewPage);
+            prevPageBtn.addEventListener('click', showPrevPreviewPage);
+            nextPageBtn.addEventListener('click', showNextPreviewPage);
+            addFontBtn.addEventListener('click', addAdditionalFont);
+            randomizeFontsBtn.addEventListener('click', showFontSelectorModal);
+            randomFontIntensity.addEventListener('input', updateRandomFontIntensityDisplay);
+            fontWeightSlider.addEventListener('input', updateGlobalFontWeight);
+            fontThicknessControl.addEventListener('input', updateFontThicknessDisplay);
+            applyThicknessBtn.addEventListener('click', applyFontThickness);
+            confirmFontSelectionBtn.addEventListener('click', confirmFontSelection);
+            cancelFontSelectionBtn.addEventListener('click', hideFontSelectorModal);
+
+            // Font Thickness Functions
+            function updateFontThicknessDisplay() {
+                currentFontThickness = fontThicknessControl.value;
+                fontThicknessValue.textContent = currentFontThickness;
+
+                // Update preview
+                const previewText = fontThicknessPreview.querySelector('span');
+                previewText.style.textShadow = `0 0 ${currentFontThickness}px currentColor`;
+            }
+
+            function applyFontThickness() {
+                if (!selectedElement) return;
+
+                // Save current randomized state
+                const wasRandomized = isRandomized;
+                const randomizedSpans = selectedElement.querySelectorAll('span[data-random-font]');
+                const fontData = [];
+
+                if (wasRandomized) {
+                    randomizedSpans.forEach(span => {
+                        fontData.push({
+                            char: span.textContent,
+                            font: span.style.fontFamily || span.getAttribute('data-random-font'),
+                            weight: span.style.fontWeight || globalFontWeight
+                        });
+                    });
+                }
+
+                // Apply thickness to all characters in the selected element
+                const text = selectedElement.textContent;
+                selectedElement.innerHTML = '';
+
+                for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    if (char === ' ') {
+                        selectedElement.appendChild(document.createTextNode(' '));
+                        continue;
+                    }
+
+                    const span = document.createElement('span');
+                    span.textContent = char;
+                    span.style.textShadow = `0 0 ${currentFontThickness}px currentColor`;
+
+                    // If text was randomized, restore the font family
+                    if (wasRandomized && fontData[i]) {
+                        span.style.fontFamily = fontData[i].font;
+                        span.style.fontWeight = fontData[i].weight;
+                        span.setAttribute('data-random-font', fontData[i].font);
+                    } else {
+                        span.style.fontFamily = fontFamily.value;
+                        span.style.fontWeight = globalFontWeight;
+                    }
+
+                    selectedElement.appendChild(span);
+                }
+
+                // Re-add handles
+                const rotateHandle = document.createElement('div');
+                rotateHandle.className = 'rotate-handle';
+                selectedElement.appendChild(rotateHandle);
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'resize-handle';
+                selectedElement.appendChild(resizeHandle);
+
+                // Restore randomized state flag
+                isRandomized = wasRandomized;
+
+                // Re-setup interactions
+                setupElementInteractions(selectedElement);
+            }
+
+            // Font Selection Modal Functions
+            function showFontSelectorModal() {
+                if (!selectedElement) {
+                    alert("Please select a text element first!");
+                    return;
+                }
+
+                // Get all available fonts (system + custom + additional)
+                const allFonts = Array.from(fontFamily.options).map(opt => opt.value)
+                    .concat(additionalFonts)
+                    .concat(customFonts)
+                    .filter((value, index, self) => self.indexOf(value) === index);
+
+                // Clear previous checkboxes
+                fontSelectorList.innerHTML = '';
+
+                // Create checkboxes for each font
+                allFonts.forEach(font => {
+                    const isChecked = selectedFontsForRandomization.includes(font) ||
+                                     (selectedFontsForRandomization.length === 0 && font === fontFamily.value);
+
+                    const checkboxDiv = document.createElement('div');
+                    checkboxDiv.className = 'font-checkbox';
+                    checkboxDiv.innerHTML = `
+                        <input type="checkbox" id="font-${font}" ${isChecked ? 'checked' : ''}>
+                        <label for="font-${font}" style="font-family: '${font}'">${font}</label>
+                    `;
+                    fontSelectorList.appendChild(checkboxDiv);
+                });
+
+                // Show modal
+                fontSelectorModal.classList.remove('hidden');
+            }
+
+            function hideFontSelectorModal() {
+                fontSelectorModal.classList.add('hidden');
+            }
+
+            function confirmFontSelection() {
+                // Get selected fonts
+                selectedFontsForRandomization = [];
+                const checkboxes = fontSelectorList.querySelectorAll('input[type="checkbox"]:checked');
+
+                checkboxes.forEach(checkbox => {
+                    const fontName = checkbox.id.replace('font-', '');
+                    selectedFontsForRandomization.push(fontName);
+                });
+
+                // Hide modal
+                hideFontSelectorModal();
+
+                // If fonts are selected, randomize
+                if (selectedFontsForRandomization.length > 0) {
+                    randomizeTextFonts();
+                }
+            }
+
+            // Drag and drop functionality
+            document.addEventListener('mousedown', (e) => {
+                if (e.target.closest('.text-element')) {
+                    isMoving = true;
+                    currentDraggable = e.target.closest('.text-element');
+                    const rect = currentDraggable.getBoundingClientRect();
+
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    initialX = rect.left;
+                    initialY = rect.top;
+
+                    currentDraggable.style.cursor = 'grabbing';
+                    currentDraggable.style.userSelect = 'none';
+
+                    // Select the element being moved
+                    selectElement(currentDraggable);
+                }
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isMoving || !currentDraggable) return;
+
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+
+                currentDraggable.style.left = `${initialX + deltaX}px`;
+                currentDraggable.style.top = `${initialY + deltaY}px`;
+            });
+
+            document.addEventListener('mouseup', () => {
+                isMoving = false;
+                if (currentDraggable) {
+                    currentDraggable.style.cursor = 'grab';
+                    currentDraggable.style.userSelect = 'auto';
+                    currentDraggable = null;
+                }
+            });
+
+            // Update displays
+            function updateFontSizeDisplay() {
+                fontSizeValue.textContent = `${fontSize.value}px`;
+                if (selectedElement) {
+                    selectedElement.style.fontSize = `${fontSize.value}px`;
+                }
+            }
+
+            function updateLineHeightDisplay() {
+                lineHeightValue.textContent = lineHeight.value;
+                if (selectedElement) {
+                    selectedElement.style.lineHeight = lineHeight.value;
+                }
+            }
+
+            function updateRandomAngleDisplay() {
+                randomAngleValue.textContent = `${randomAngle.value}°`;
+            }
+
+            function updateRandomFontIntensityDisplay() {
+                randomFontIntensityValue.textContent = randomFontIntensity.value;
+            }
+
+            function updatePageSize() {
+                const pages = document.querySelectorAll('.page');
+                pages.forEach(page => {
+                    page.style.width = '210mm';
+                    page.style.height = '297mm';
+                    page.style.minHeight = '297mm';
+                });
+            }
+
+            function updateGlobalFontWeight() {
+                globalFontWeight = parseInt(fontWeightSlider.value);
+                updateFontWeightDisplay();
+
+                // Apply to all text elements
+                document.querySelectorAll('.text-element').forEach(el => {
+                    el.style.fontWeight = globalFontWeight;
+                });
+
+                // Update selected element if exists
+                if (selectedElement) {
+                    selectedElement.style.fontWeight = globalFontWeight;
+                }
+            }
+
+            function updateFontWeightDisplay() {
+                let weightName = "";
+                switch(globalFontWeight) {
+                    case 100: weightName = "Thin"; break;
+                    case 200: weightName = "Extra Light"; break;
+                    case 300: weightName = "Light"; break;
+                    case 400: weightName = "Normal"; break;
+                    case 500: weightName = "Medium"; break;
+                    case 600: weightName = "Semi Bold"; break;
+                    case 700: weightName = "Bold"; break;
+                    case 800: weightName = "Extra Bold"; break;
+                    case 900: weightName = "Black"; break;
+                    default: weightName = "Custom";
+                }
+                fontWeightValue.textContent = `${globalFontWeight} (${weightName})`;
+            }
+
+            // Texture functions
+            function previewTexture() {
+                const file = textureUpload.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    texturePreview.style.backgroundImage = `url(${e.target.result})`;
+                    currentTexture = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            function applyTexture() {
+                if (!selectedElement || !currentTexture) return;
+
+                selectedElement.style.backgroundImage = `url(${currentTexture})`;
+                selectedElement.style.backgroundClip = 'text';
+                selectedElement.style.webkitBackgroundClip = 'text';
+                selectedElement.style.color = 'transparent';
+                selectedElement.style.webkitTextFillColor = 'transparent';
+            }
+
+            function removeTexture() {
+                if (!selectedElement) return;
+
+                selectedElement.style.backgroundImage = '';
+                selectedElement.style.backgroundClip = '';
+                selectedElement.style.webkitBackgroundClip = '';
+                selectedElement.style.webkitTextFillColor = '';
+                selectedElement.style.color = textColor.value;
+            }
+
+            // Page functions
+            function addNewPage() {
+                currentPage++;
+                const pageContainer = document.createElement('div');
+                pageContainer.className = 'page-container';
+
+                const newPage = document.createElement('div');
+                newPage.id = `page-${currentPage}`;
+                newPage.className = 'page bg-white mx-auto';
+
+                // Set size based on current format
+                newPage.style.width = '210mm';
+                newPage.style.height = '297mm';
+                newPage.style.minHeight = '297mm';
+
+                pageContainer.appendChild(newPage);
+                pagesContainer.appendChild(pageContainer);
+            }
+
+            // Additional Fonts functions
+            function addAdditionalFont() {
+                const selectedFont = fontFamily.value;
+                if (!additionalFonts.includes(selectedFont) && selectedFont !== '') {
+                    additionalFonts.push(selectedFont);
+                    renderAdditionalFonts();
+                }
+            }
+
+            function renderAdditionalFonts() {
+                additionalFontsContainer.innerHTML = '';
+                additionalFonts.forEach((font, index) => {
+                    const fontTag = document.createElement('div');
+                    fontTag.className = 'font-tag';
+                    fontTag.innerHTML = `
+                        <span style="font-family: ${font}">${font}</span>
+                        <button data-index="${index}">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    `;
+                    additionalFontsContainer.appendChild(fontTag);
+                });
+
+                // Add event listeners to remove buttons
+                document.querySelectorAll('#additional-fonts button').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const index = parseInt(this.getAttribute('data-index'));
+                        additionalFonts.splice(index, 1);
+                        renderAdditionalFonts();
+                    });
+                });
+            }
+
+            // Randomize fonts in text (including custom fonts)
+            function randomizeTextFonts() {
+                if (!selectedElement || (selectedFontsForRandomization.length === 0 && additionalFonts.length === 0 && customFonts.length === 0)) {
+                    alert("Please select some fonts first!");
+                    return;
+                }
+
+                const intensity = parseInt(randomFontIntensity.value);
+                const allFonts = selectedFontsForRandomization.length > 0 ?
+                    selectedFontsForRandomization :
+                    [fontFamily.value, ...additionalFonts, ...customFonts];
+                const text = selectedElement.textContent;
+                selectedElement.innerHTML = '';
+
+                for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    if (char === ' ') {
+                        selectedElement.appendChild(document.createTextNode(' '));
+                        continue;
+                    }
+
+                    const span = document.createElement('span');
+                    span.textContent = char;
+                    span.style.fontWeight = globalFontWeight; // Apply global font weight
+
+                    // Randomly decide if we should change font for this character
+                    if (Math.random() < (intensity / 10)) {
+                        const randomFont = allFonts[Math.floor(Math.random() * allFonts.length)];
+                        span.style.fontFamily = randomFont;
+                        span.setAttribute('data-random-font', randomFont);
+                    } else {
+                        span.style.fontFamily = fontFamily.value;
+                    }
+
+                    selectedElement.appendChild(span);
+                }
+
+                // Set randomized flag
+                isRandomized = true;
+
+                // Re-add handles
+                const rotateHandle = document.createElement('div');
+                rotateHandle.className = 'rotate-handle';
+                selectedElement.appendChild(rotateHandle);
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'resize-handle';
+                selectedElement.appendChild(resizeHandle);
+
+                // Re-setup interactions
+                setupElementInteractions(selectedElement);
+            }
+
+            // Text Element Functions
+            function addTextElement() {
+                const text = textContent.value.trim();
+                if (!text) return;
+
+                // Split text into pages if needed
+                const pages = splitTextIntoPages(text);
+
+                // Create text elements for each page
+                pages.forEach((pageText, pageIndex) => {
+                    // If page doesn't exist, create it
+                    if (pageIndex > 0 && !document.getElementById(`page-${pageIndex + 1}`)) {
+                        addNewPage();
+                    }
+
+                    const element = document.createElement('div');
+                    element.className = 'text-element';
+                    element.contentEditable = true;
+                    element.style.transformOrigin = 'center center';
+                    element.style.willChange = 'transform';
+
+                    // Apply styles
+                    element.style.fontFamily = fontFamily.value;
+                    element.style.fontSize = `${fontSize.value}px`;
+                    element.style.fontWeight = globalFontWeight; // Use global font weight
+                    element.style.lineHeight = lineHeight.value;
+                    element.style.color = textColor.value;
+                    element.style.left = '50px';
+                    element.style.top = '50px';
+
+                    // Create appropriate heading or paragraph
+                    const tag = headingLevel.value;
+                    const innerElement = document.createElement(tag);
+                    innerElement.textContent = pageText;
+                    element.appendChild(innerElement);
+
+                    // Add handles
+                    const rotateHandle = document.createElement('div');
+                    rotateHandle.className = 'rotate-handle';
+                    element.appendChild(rotateHandle);
+
+                    const resizeHandle = document.createElement('div');
+                    resizeHandle.className = 'resize-handle';
+                    element.appendChild(resizeHandle);
+
+                    // Add to appropriate page
+                    const pageElement = document.getElementById(`page-${pageIndex + 1}`);
+                    if (pageElement) {
+                        pageElement.appendChild(element);
+
+                        // Make draggable
+                        setupElementInteractions(element);
+
+                        // Select the new element
+                        selectElement(element);
+                    }
+                });
+
+                // Clear input
+                textContent.value = '';
+            }
+
+            function splitTextIntoPages(text) {
+                // This is a simplified version - you'll need to implement proper text measurement
+                // For now, we'll just split by approximate character count
+                const maxCharsPerPage = 2000; // Adjust based on your needs
+                const pages = [];
+                let currentPageText = '';
+
+                // Split text into words
+                const words = text.split(' ');
+
+                for (const word of words) {
+                    if (currentPageText.length + word.length + 1 <= maxCharsPerPage) {
+                        currentPageText += (currentPageText ? ' ' : '') + word;
+                    } else {
+                        pages.push(currentPageText);
+                        currentPageText = word;
+                    }
+                }
+
+                if (currentPageText) {
+                    pages.push(currentPageText);
+                }
+
+                return pages;
+            }
+
+            function setupElementInteractions(element) {
+                const rotateHandle = element.querySelector('.rotate-handle');
+                const resizeHandle = element.querySelector('.resize-handle');
+
+                // Select element
+                element.addEventListener('mousedown', (e) => {
+                    if (e.target === element || e.target === element.firstChild) {
+                        e.stopPropagation();
+                        selectElement(element);
+
+                        // Start dragging
+                        isDragging = true;
+                        startX = e.clientX - element.getBoundingClientRect().left;
+                        startY = e.clientY - element.getBoundingClientRect().top;
+                    }
+                });
+
+                // Rotate handle
+                rotateHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    selectElement(element);
+                    isRotating = true;
+
+                    const rect = element.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
+
+                    const currentAngle = parseFloat(element.style.transform?.replace('rotate(', '').replace('deg)', '')) || 0;
+                    startAngle -= currentAngle;
+                });
+
+                // Resize handle
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    selectElement(element);
+                    isResizing = true;
+
+                    const style = window.getComputedStyle(element);
+                    startWidth = parseFloat(style.width);
+                    startHeight = parseFloat(style.height);
+                });
+
+                // Make editable
+                element.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    element.focus();
+                });
+            }
+
+            // Global mouse events
+            document.addEventListener('mousemove', (e) => {
+                if (!selectedElement) return;
+
+                if (isDragging) {
+                    const page = selectedElement.parentElement;
+                    const pageRect = page.getBoundingClientRect();
+
+                    const x = e.clientX - startX - pageRect.left;
+                    const y = e.clientY - startY - pageRect.top;
+
+                    selectedElement.style.left = `${x}px`;
+                    selectedElement.style.top = `${y}px`;
+                }
+
+                if (isRotating) {
+                    const rect = selectedElement.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    const angle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI - startAngle;
+
+                    selectedElement.style.transform = `rotate(${angle}deg) translateZ(0)`;
+                }
+
+                if (isResizing) {
+                    const width = e.clientX - selectedElement.getBoundingClientRect().left;
+                    const height = e.clientY - selectedElement.getBoundingClientRect().top;
+
+                    selectedElement.style.width = `${width}px`;
+                    selectedElement.style.height = `${height}px`;
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                isResizing = false;
+                isRotating = false;
+            });
+
+            // Selection functions
+            function selectElement(element) {
+                // Deselect current
+                if (selectedElement) {
+                    selectedElement.classList.remove('selected');
+                }
+
+                // Select new
+                selectedElement = element;
+                if (element) {
+                    element.classList.add('selected');
+                    updateControlValues();
+                    updateSelectionInfo();
+
+                    // Check if element has randomized fonts
+                    isRandomized = element.querySelector('span[data-random-font]') !== null;
+                }
+            }
+
+            function updateControlValues() {
+                if (!selectedElement) return;
+
+                const style = window.getComputedStyle(selectedElement);
+
+                // Apply computed styles directly to element
+                selectedElement.style.font = style.font;
+                selectedElement.style.transform = style.transform;
+                selectedElement.style.lineHeight = style.lineHeight;
+
+                // Font family
+                fontFamily.value = style.fontFamily.split(',')[0].replace(/["']/g, '').trim();
+
+                // Font size
+                const size = parseFloat(style.fontSize);
+                fontSize.value = size;
+                fontSizeValue.textContent = `${size}px`;
+
+                // Font weight
+                fontWeightSlider.value = style.fontWeight;
+                globalFontWeight = parseInt(style.fontWeight);
+                updateFontWeightDisplay();
+
+                // Line height
+                const lh = parseFloat(style.lineHeight);
+                lineHeight.value = lh;
+                lineHeightValue.textContent = lh;
+
+                // Color
+                if (style.backgroundImage === 'none') {
+                    textColor.value = rgbToHex(style.color);
+                } else {
+                    textColor.value = '#000000';
+                }
+
+                // Heading level
+                const tagName = selectedElement.firstChild.tagName.toLowerCase();
+                headingLevel.value = tagName === 'div' ? 'p' : tagName;
+            }
+
+            function updateSelectionInfo() {
+                if (!selectedElement) {
+                    selectionInfo.textContent = 'No selection';
+                    return;
+                }
+
+                const style = window.getComputedStyle(selectedElement);
+                const left = parseFloat(selectedElement.style.left || 0);
+                const top = parseFloat(selectedElement.style.top || 0);
+                const angle = parseFloat(selectedElement.style.transform?.replace('rotate(', '').replace('deg)', '')) || 0;
+
+                selectionInfo.innerHTML = `
+                    <div><strong>Text:</strong> ${selectedElement.textContent}</div>
+                    <div><strong>Position:</strong> ${Math.round(left)}px, ${Math.round(top)}px</div>
+                    <div><strong>Size:</strong> ${Math.round(parseFloat(style.width))}×${Math.round(parseFloat(style.height))}px</div>
+                    <div><strong>Rotation:</strong> ${Math.round(angle)}°</div>
+                    <div><strong>Font:</strong> ${style.fontFamily.split(',')[0].replace(/["']/g, '').trim()} ${parseFloat(style.fontSize)}px</div>
+                    <div><strong>Weight:</strong> ${style.fontWeight}</div>
+                    <div><strong>Line Height:</strong> ${parseFloat(style.lineHeight)}</div>
+                    <div><strong>Color:</strong> ${style.color}</div>
+                `;
+            }
+
+            // Utility functions
+            function rgbToHex(rgb) {
+                // Convert rgb color to hex
+                const match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+                if (!match) return '#000000';
+
+                const r = parseInt(match[1], 10);
+                const g = parseInt(match[2], 10);
+                const b = parseInt(match[3], 10);
+
+                return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+            }
+
+            // Randomize angles
+            function randomizeTextAngles() {
+                if (!selectedElement) return;
+
+                const angle = parseInt(randomAngle.value);
+                if (angle === 0) {
+                    // Remove randomization
+                    const spans = selectedElement.querySelectorAll('span.randomized');
+                    spans.forEach(span => {
+                        const text = document.createTextNode(span.textContent);
+                        span.parentNode.replaceChild(text, span);
+                    });
+                    return;
+                }
+
+                const text = selectedElement.textContent;
+                selectedElement.innerHTML = '';
+
+                for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    if (char === ' ') {
+                        selectedElement.appendChild(document.createTextNode(' '));
+                        continue;
+                    }
+
+                    const span = document.createElement('span');
+                    span.textContent = char;
+                    span.className = 'randomized';
+
+                    // Random angle within range
+                    const randomAngle = (Math.random() * 2 - 1) * angle;
+                    span.style.display = 'inline-block';
+                    span.style.transform = `rotate(${randomAngle}deg) translateZ(0)`;
+                    span.style.transformOrigin = 'center';
+                    span.style.fontWeight = globalFontWeight; // Apply global font weight
+
+                    selectedElement.appendChild(span);
+                }
+
+                // Re-add handles
+                const rotateHandle = document.createElement('div');
+                rotateHandle.className = 'rotate-handle';
+                selectedElement.appendChild(rotateHandle);
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'resize-handle';
+                selectedElement.appendChild(resizeHandle);
+
+                // Re-setup interactions
+                setupElementInteractions(selectedElement);
+            }
+
+            // Download functions
+            async function prepareForDownload() {
+                try {
+                    // 1. Create a clone of the page without control elements
+                    const originalPage = document.querySelector('.page');
+                    const clone = originalPage.cloneNode(true);
+
+                    // 2. Remove all control elements from the clone
+                    clone.querySelectorAll('.rotate-handle, .resize-handle').forEach(el => {
+                        el.parentNode.removeChild(el);
+                    });
+
+                    // 3. Configure the clone for rendering
+                    clone.style.position = 'absolute';
+                    clone.style.left = '0';
+                    clone.style.top = '0';
+                    clone.style.visibility = 'visible';
+                    clone.style.opacity = '1';
+                    document.body.appendChild(clone);
+
+                    // 4. Wait for fonts to load and styles to apply
+                    await document.fonts.ready;
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // 5. Render only the clone
+                    const canvas = await html2canvas(clone, {
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: true,
+                        logging: true,
+                        backgroundColor: null,
+                        onclone: (clonedDoc) => {
+                            clonedDoc.body.style.visibility = 'visible';
+                        }
+                    });
+
+                    // 6. Create preview
+                    const previewPage = document.createElement('div');
+                    previewPage.className = 'preview-page';
+                    const img = new Image();
+                    img.src = canvas.toDataURL('image/png');
+                    previewPage.appendChild(img);
+
+                    // 7. Clear previous preview and add new one
+                    previewPages.innerHTML = '';
+                    previewPages.appendChild(previewPage);
+
+                    // 8. Remove clone from DOM
+                    document.body.removeChild(clone);
+
+                    // 9. Store canvas for download
+                    preparedCanvases = [{
+                        canvas: canvas,
+                        filename: `${filenameInput.value.trim() || 'text-editor'}-1`
+                    }];
+
+                    // 10. Show preview
+                    downloadPreview.style.display = 'flex';
+                    showPreviewPage(0);
+
+                } catch (error) {
+                    console.error('Render error:', error);
+                    alert('Rendering error! Check console for details.');
+                }
+            }
+
+            function showPreviewPage(index) {
+                const pages = previewPages.querySelectorAll('.preview-page');
+                if (index >= 0 && index < pages.length) {
+                    pages.forEach((page, i) => {
+                        page.style.display = i === index ? 'block' : 'none';
+                    });
+                    currentPreviewPage = index;
+                    pageCounter.textContent = `Page ${index + 1} of ${pages.length}`;
+
+                    // Disable/enable navigation buttons
+                    prevPageBtn.disabled = index === 0;
+                    nextPageBtn.disabled = index === pages.length - 1;
+                }
+            }
+
+            function showPrevPreviewPage() {
+                if (currentPreviewPage > 0) {
+                    showPreviewPage(currentPreviewPage - 1);
+                }
+            }
+
+            function showNextPreviewPage() {
+                if (currentPreviewPage < preparedCanvases.length - 1) {
+                    showPreviewPage(currentPreviewPage + 1);
+                }
+            }
+
+            function downloadPrepared(format) {
+                if (preparedCanvases.length === 0) return;
+
+                if (format === 'pdf') {
+                    // For PDF, we'll create a multi-page PDF using jsPDF
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF({
+                        orientation: preparedCanvases[0].canvas.width > preparedCanvases[0].canvas.height ? 'landscape' : 'portrait',
+                        unit: 'mm'
+                    });
+
+                    preparedCanvases.forEach((item, index) => {
+                        if (index > 0) {
+                            pdf.addPage();
+                        }
+
+                        // Calculate dimensions in mm
+                        const widthInMm = item.canvas.width / (item.canvas.width / 210); // Approximate conversion
+                        const heightInMm = item.canvas.height / (item.canvas.height / 297); // Approximate conversion
+
+                        // Add image to PDF
+                        pdf.addImage(item.canvas.toDataURL('image/png'), 'PNG', 0, 0, widthInMm, heightInMm);
+                    });
+
+                    // Download PDF
+                    pdf.save(`${filenameInput.value.trim() || 'text-editor'}.pdf`);
+                } else {
+                    // For PNG/JPG, download each page separately
+                    preparedCanvases.forEach(item => {
+                        const link = document.createElement('a');
+                        link.download = `${item.filename}.${format}`;
+                        link.href = item.canvas.toDataURL(`image/${format}`, 1.0);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    });
+                }
+
+                cancelDownload();
+            }
+
+            function cancelDownload() {
+                downloadPreview.style.display = 'none';
+                preparedCanvases = [];
+            }
+
+            // Delete selected
+            function deleteSelected() {
+                if (selectedElement) {
+                    selectedElement.parentElement.removeChild(selectedElement);
+                    selectedElement = null;
+                    updateSelectionInfo();
+                }
+            }
+
+            // Load custom fonts (multiple)
+            function loadCustomFonts() {
+                const files = fontUpload.files;
+                if (!files || files.length === 0) return;
+
+                // Clear previous custom fonts
+                customFonts = [];
+
+                // Process each file
+                Array.from(files).forEach(file => {
+                    const fontName = file.name.split('.')[0];
+                    const font = new FontFace(fontName, `url(${URL.createObjectURL(file)})`);
+
+                    font.load().then(loadedFont => {
+                        document.fonts.add(loadedFont);
+                        customFonts.push(fontName);
+
+                        // Add to font family dropdown if not already there
+                        const existingOption = Array.from(fontFamily.options).find(opt => opt.value === fontName);
+                        if (!existingOption) {
+                            const option = new Option(fontName, fontName);
+                            fontFamily.add(option);
+                        }
+
+                        // Force render update
+                        document.body.style.fontFamily = `${fontName}, sans-serif`;
+                        setTimeout(() => {
+                            document.body.style.fontFamily = '';
+                        }, 100);
+                    }).catch(err => {
+                        console.error('Font loading failed:', err);
+                        alert(`Failed to load font ${fontName}. Please try another file.`);
+                    });
+                });
+
+                // Clear file input
+                fontUpload.value = '';
+            }
+
+            // Control changes
+            fontFamily.addEventListener('change', () => {
+                if (selectedElement) {
+                    selectedElement.style.fontFamily = fontFamily.value;
+                }
+            });
+
+            textColor.addEventListener('input', () => {
+                if (selectedElement) {
+                    if (selectedElement.style.backgroundImage === '') {
+                        selectedElement.style.color = textColor.value;
+                    }
+                }
+            });
+
+            headingLevel.addEventListener('change', () => {
+                if (!selectedElement) return;
+
+                const currentText = selectedElement.textContent;
+                const newElement = document.createElement(headingLevel.value);
+                newElement.textContent = currentText;
+
+                // Replace the child
+                selectedElement.innerHTML = '';
+                selectedElement.appendChild(newElement);
+
+                // Re-add handles
+                const rotateHandle = document.createElement('div');
+                rotateHandle.className = 'rotate-handle';
+                selectedElement.appendChild(rotateHandle);
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'resize-handle';
+                selectedElement.appendChild(resizeHandle);
+
+                // Re-setup interactions
+                setupElementInteractions(selectedElement);
+            });
+
+            // Click on page to deselect
+            document.querySelectorAll('.page').forEach(page => {
+                page.addEventListener('mousedown', (e) => {
+                    if (e.target === page) {
+                        selectElement(null);
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
